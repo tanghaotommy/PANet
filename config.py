@@ -27,7 +27,7 @@ def cfg():
     input_size = (417, 417)
     seed = 1234
     cuda_visable = '0, 1, 2, 3, 4, 5, 6, 7'
-    gpu_id = 0
+    gpu_id = 1
     mode = 'test' # 'train' or 'test'
 
 
@@ -44,6 +44,7 @@ def cfg():
 
         model = {
             'align': True,
+            'use_alp': True,
         }
 
         task = {
@@ -60,7 +61,8 @@ def cfg():
 
     elif mode == 'test':
         notrain = False
-        snapshot = './runs/PANet_VOC_sets_0_1way_1shot_[train]/1/snapshots/30000.pth'
+        snapshot = './runs/PANet_VOC_align_use_alp_sets_0_1way_1shot_alp_[train]/1/snapshots/30000.pth'
+        # snapshot = './runs/PANet_VOC_align_sets_0_1way_1shot_[train]/3/snapshots/30000.pth'
         n_runs = 5
         n_steps = 1000
         batch_size = 1
@@ -78,7 +80,7 @@ def cfg():
 
         # Set model config from the snapshot string
         model = {}
-        for key in ['align',]:
+        for key in ['align', 'use_alp']:
             model[key] = key in snapshot
 
         # Set label_sets from the snapshot string
@@ -98,13 +100,13 @@ def cfg():
     exp_str = '_'.join(
         [dataset,]
         + [key for key, value in model.items() if value]
-        + [f'sets_{label_sets}', f'{task["n_ways"]}way_{task["n_shots"]}shot_[{mode}]'])
+        + [f'sets_{label_sets}', f'{task["n_ways"]}way_{task["n_shots"]}shot_alp_2_[{mode}]'])
 
 
     path = {
         'log_dir': './runs',
         'init_path': './pretrained_model/vgg16-397923af.pth',
-        'VOC':{'data_dir': '../../data/Pascal/VOCdevkit/VOC2012/',
+        'VOC':{'data_dir': '../data/VOCdevkit/VOC2012/',
                'data_split': 'trainaug',},
         'COCO':{'data_dir': '../../data/COCO/',
                 'data_split': 'train',},

@@ -78,14 +78,35 @@ class FewShotSeg(nn.Module):
                                              back_mask[way, shot, [epi]])
                             for shot in range(n_shots)] for way in range(n_ways)]
 
-            ###### Obtain the prototypes######
-            fg_prototypes, bg_prototype = self.getPrototype(supp_fg_fts, supp_bg_fts)
+            if self.config['use_alp']:
+                supp_fg_alp_fts, supp_cls_mask = self.getALPFeatures(
+                        supp_fts[0, 0, [epi]], fore_mask[0, 0, [epi]], back_mask[0, 0, [epi]]
+                )
 
-            ###### Compute the distance ######
-            prototypes = [bg_prototype,] + fg_prototypes
-            dist = [self.calDist(qry_fts[:, epi], prototype) for prototype in prototypes]
-            pred = torch.stack(dist, dim=1)  # N x (1 + Wa) x H' x W'
-            outputs.append(F.interpolate(pred, size=img_size, mode='bilinear'))
+                B, C, H, W = supp_fg_alp_fts.shape
+                supp_fg_alp_fts = supp_fg_alp_fts.view(B, C, -1).permute(2, 0, 1).contiguous()
+                supp_cls_mask = supp_cls_mask.squeeze().view(n_ways + 1, -1).permute(1, 0).contiguous()
+                prototype_mask = torch.cat([torch.cuda.FloatTensor([[1, 0], [0, 1]]), supp_cls_mask], 0)
+                prototypes = torch.cat([supp_bg_fts[0][0][None, ...], supp_fg_fts[0][0][None, ...], supp_fg_alp_fts], 0)
+
+                sim_map = [self.calDist(qry_fts[:, epi], prototype) for prototype in prototypes]
+                sim_map = torch.cat(sim_map, 0)
+                pred = []
+                for c in range(2):
+                    m = prototype_mask[:, c]
+                    s_c = sim_map[m > 0]
+                    pred.append(torch.sum(F.softmax(s_c, 0) * s_c, dim=0))
+                pred = torch.stack(pred, dim=0).unsqueeze(0)  # N x (1 + Wa) x H' x W'
+                outputs.append(F.interpolate(pred, size=img_size, mode='bilinear'))
+            else:
+                ###### Obtain the prototypes######
+                fg_prototypes, bg_prototype = self.getPrototype(supp_fg_fts, supp_bg_fts)
+
+                ###### Compute the distance ######
+                prototypes = [bg_prototype,] + fg_prototypes
+                dist = [self.calDist(qry_fts[:, epi], prototype) for prototype in prototypes]
+                pred = torch.stack(dist, dim=1)  # N x (1 + Wa) x H' x W'
+                outputs.append(F.interpolate(pred, size=img_size, mode='bilinear'))
 
             ###### Prototype alignment loss ######
             if self.config['align'] and self.training:
@@ -124,6 +145,18 @@ class FewShotSeg(nn.Module):
         masked_fts = torch.sum(fts * mask[None, ...], dim=(2, 3)) \
             / (mask[None, ...].sum(dim=(2, 3)) + 1e-5) # 1 x C
         return masked_fts
+
+
+    def getALPFeatures(self, fts, fore_mask, back_mask):
+        ft_H, ft_W = fts.shape[-2:]
+        scale_alp = 2
+
+        mask = torch.cat([back_mask[None, ...], fore_mask[None, ...]])
+        pooled_mask = F.adaptive_avg_pool2d(mask, [ft_H // scale_alp, ft_W // scale_alp])
+        pooled_mask = (pooled_mask >= 0.95).float()
+        pooled_fts = F.avg_pool2d(fts, scale_alp, scale_alp)
+
+        return pooled_fts, pooled_mask
 
 
     def getPrototype(self, fg_fts, bg_fts):
