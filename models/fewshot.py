@@ -149,9 +149,11 @@ class FewShotSeg(nn.Module):
 
     def getALPFeatures(self, fts, fore_mask, back_mask):
         ft_H, ft_W = fts.shape[-2:]
-        scale_alp = 2
+        scale_alp = 4
 
-        mask = torch.cat([back_mask[None, ...], fore_mask[None, ...]])
+        # no background local prototypes
+        mask = torch.cat([torch.zeros_like(fore_mask[None, ...]), fore_mask[None, ...]])
+        p = F.adaptive_avg_pool2d(fore_mask[None, ...], [ft_H, ft_W])
         pooled_mask = F.adaptive_avg_pool2d(mask, [ft_H // scale_alp, ft_W // scale_alp])
         pooled_mask = (pooled_mask >= 0.95).float()
         pooled_fts = F.avg_pool2d(fts, scale_alp, scale_alp)
